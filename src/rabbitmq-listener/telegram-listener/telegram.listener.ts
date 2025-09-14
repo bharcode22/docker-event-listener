@@ -1,5 +1,4 @@
 import { Logger } from '@nestjs/common';
-import { TelegramBotServiceAdmin } from '../../telegram-bot/telegram-bot.service';
 import Docker = require('dockerode');
 
 const escapeMarkdownV2 = (text: string) =>
@@ -9,10 +8,6 @@ export class RabbitmqTelegramListener {
   private readonly logger = new Logger(RabbitmqTelegramListener.name);
   private messageTimers: Record<string, NodeJS.Timeout> = {};
   private docker: Docker;
-
-  constructor(private readonly telegramService: TelegramBotServiceAdmin) {
-    this.docker = new Docker();
-  }
 
   async handle(channel: any, exchange: string) {
     const q = await channel.assertQueue('', { exclusive: true });
@@ -37,9 +32,6 @@ export class RabbitmqTelegramListener {
         case 'containers': {
           const containers = await this.docker.listContainers({ all: false });
           if (containers.length === 0) {
-            await this.telegramService.sendMessage(
-              escapeMarkdownV2('🚫 Tidak ada container yang berjalan.')
-            );
             return;
           }
           const list = containers
@@ -49,38 +41,25 @@ export class RabbitmqTelegramListener {
                 `(${escapeMarkdownV2(c.Id.substring(0, 12))}) ⏱️ ${escapeMarkdownV2(c.Status)}`
             )
             .join('\n');
-          await this.telegramService.sendMessage(`📦 Daftar container:\n${list}`);
           break;
         }
         case 'restart': {
           const { containerId } = payload;
           const container = this.docker.getContainer(containerId);
           await container.restart();
-          await this.telegramService.sendMessage(
-            `🔄 Container *${escapeMarkdownV2(containerId)}* berhasil direstart.`
-          );
           break;
         }
         case 'stop': {
           const { containerId } = payload;
           const container = this.docker.getContainer(containerId);
           await container.stop();
-          await this.telegramService.sendMessage(
-            `🛑 Container *${escapeMarkdownV2(containerId)}* berhasil distop.`
-          );
           break;
         }
         default:
           this.logger.warn(`⚠️ Unknown command: ${command}`);
-          await this.telegramService.sendMessage(
-            `⚠️ Command tidak dikenali: ${escapeMarkdownV2(command)}`
-          );
       }
     } catch (error) {
       this.logger.error(`❌ Error executing command: ${error.message}`);
-      await this.telegramService.sendMessage(
-        `❌ Error: ${escapeMarkdownV2(error.message)}`
-      );
     }
   }
 

@@ -1,6 +1,5 @@
 import { Injectable, OnApplicationBootstrap, Logger } from '@nestjs/common';
 import { RabbitmqConnectionService } from './rabbitmq.connection';
-import { TelegramBotServiceAdmin } from '../telegram-bot/telegram-bot.service';
 
 // admin
 import { RabbitmqTelegramListener } from './telegram-listener/telegram.listener';
@@ -11,7 +10,6 @@ export class RabbitmqListenerService implements OnApplicationBootstrap {
 
     constructor(
         private readonly rabbitmqService: RabbitmqConnectionService,
-        private readonly telegramServiceAdmin: TelegramBotServiceAdmin,
     ) {}
 
     async onApplicationBootstrap() {
@@ -21,10 +19,10 @@ export class RabbitmqListenerService implements OnApplicationBootstrap {
         this.logger.log('✅ RabbitMQ channel ready');
 
         const SpesifikListeners = [
-            { 
-                exchange: process.env.DOCKER_COMMANDS, 
-                handler: new RabbitmqTelegramListener(this.telegramServiceAdmin) 
-            }
+            // { 
+            //     exchange: process.env.DOCKER_COMMANDS, 
+            //     handler: new RabbitmqTelegramListener(this.telegramServiceAdmin) 
+            // }
         ].filter(l => l.exchange);
 
         if (SpesifikListeners.length === 0) {
