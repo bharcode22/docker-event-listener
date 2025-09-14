@@ -1,13 +1,27 @@
 import { Logger } from '@nestjs/common';
 import Docker = require('dockerode');
+import * as os from 'os';
 
-const escapeMarkdownV2 = (text: string) =>
-	text.replace(/([_*\[\]()~`>#+\-=|{}.!>])/g, '\\$1');
+function getServerIp(): string {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name]!) {
+      if (net.family === 'IPv4' && !net.internal) {
+        return net.address;
+      }
+    }
+  }
+  return 'unknown';
+}
 
 export class RabbitmqTelegramListener {
   private readonly logger = new Logger(RabbitmqTelegramListener.name);
   private messageTimers: Record<string, NodeJS.Timeout> = {};
   private docker: Docker;
+
+  constructor() {
+    this.docker = new Docker();
+  }
 
   async handle(channel: any, exchange: string) {
     const q = await channel.assertQueue('', { exclusive: true });
@@ -18,7 +32,31 @@ export class RabbitmqTelegramListener {
       const content = JSON.parse(msg.content.toString());
 
       this.logger.debug(`📥 Message received: ${JSON.stringify(content)}`);
-      await this.processCommand(content);
+      const result = await this.processCommand(content);
+
+      if (result) {
+        const resultExchange = process.env.DOCKER_RESULTS || 'docker_results';
+        await channel.assertExchange(resultExchange, 'fanout', { durable: true });
+
+        // Tambahkan server info di payload
+        const payload = {
+          ...content,
+          result,
+          serverIp: getServerIp(),
+          hostname: os.hostname(),
+          timestamp: new Date().toISOString(),
+        };
+
+        channel.publish(
+          resultExchange,
+          '',
+          Buffer.from(JSON.stringify(payload)),
+        );
+
+        this.logger.log(
+          `📤 Published result to ${resultExchange} from ${payload.hostname} (${payload.serverIp})`,
+        );
+      }
 
       channel.ack(msg);
     });
@@ -32,34 +70,38 @@ export class RabbitmqTelegramListener {
         case 'containers': {
           const containers = await this.docker.listContainers({ all: false });
           if (containers.length === 0) {
-            return;
+            return { message: '🚫 Tidak ada container yang berjalan.' };
           }
-          const list = containers
-            .map(
-              (c: any) =>
-                `• *${escapeMarkdownV2(c.Names.join(','))}* ` +
-                `(${escapeMarkdownV2(c.Id.substring(0, 12))}) ⏱️ ${escapeMarkdownV2(c.Status)}`
-            )
-            .join('\n');
-          break;
+
+          const list = containers.map((c: any) => ({
+            name: c.Names.join(','),
+            id: c.Id.substring(0, 12),
+            status: c.Status,
+          }));
+          return { message: '📦 Daftar container', containers: list };
         }
+
         case 'restart': {
           const { containerId } = payload;
           const container = this.docker.getContainer(containerId);
           await container.restart();
-          break;
+          return { message: `🔄 Container ${containerId} berhasil direstart.` };
         }
+
         case 'stop': {
           const { containerId } = payload;
           const container = this.docker.getContainer(containerId);
           await container.stop();
-          break;
+          return { message: `🛑 Container ${containerId} berhasil distop.` };
         }
+
         default:
           this.logger.warn(`⚠️ Unknown command: ${command}`);
+          return { message: `⚠️ Command tidak dikenali: ${command}` };
       }
     } catch (error) {
       this.logger.error(`❌ Error executing command: ${error.message}`);
+      return { message: `❌ Error: ${error.message}` };
     }
   }
 
