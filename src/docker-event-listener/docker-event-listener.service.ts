@@ -53,28 +53,26 @@ export class DockerEventListenerService implements OnModuleInit {
           const event = JSON.parse(chunk.toString());
           this.logger.debug(`Docker Event: ${JSON.stringify(event)}`);
 
-          if (this.channel) {
-            const message = {
-              serverIp: getServerIp(),
-              hostname: os.hostname(),
-              containerId: event.id,
-              containerName: event.Actor?.Attributes?.name,
-              image: event.from,
-              status: event.status,
-              exitCode: event?.Actor?.Attributes?.exitCode || null,
-              time: event.time,
-            };
+        if (['start', 'stop', 'die', 'resize', 'exec_create', 'destroy'].includes(event.status)) {
+          const message = {
+            serverIp: getServerIp(),
+            hostname: os.hostname(),
+            containerId: event.id,
+            containerName: event.Actor?.Attributes?.name,
+            image: event.from,
+            status: event.status,
+            exitCode: event?.Actor?.Attributes?.exitCode || null,
+            time: event.time,
+          };
 
-            this.channel.publish(
-              `${process.env.DOCKER_EVENTS}`,
-              '',
-              Buffer.from(JSON.stringify(message)),
-            );
+          this.channel.publish(
+            `${process.env.DOCKER_EVENTS}`,
+            '',
+            Buffer.from(JSON.stringify(message)),
+          );
 
-            this.logger.log(
-              `Event published: ${message}`,
-            );
-          }
+          this.logger.log(`Event published: ${event.status} - ${event.Actor?.Attributes?.name}`);
+        }
         } catch (err) {
           this.logger.error('Failed to parse docker event:', err);
         }
