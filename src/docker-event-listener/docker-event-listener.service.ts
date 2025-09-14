@@ -89,6 +89,7 @@ export class DockerEventListenerService implements OnModuleInit {
 export class DockerTelegramService implements OnModuleInit {
   private readonly logger = new Logger(DockerTelegramService.name);
   private readonly docker: Dockerode;
+  private channel: amqp.Channel;
 
   private readonly allowedChatIds: string[] = (process.env.TELEGRAM_CHAT_ID || '')
     .split(',')
@@ -100,111 +101,88 @@ export class DockerTelegramService implements OnModuleInit {
 
   async onModuleInit() {
     this.logger.log('DockerTelegramService initialized.');
+    await this.connectRabbitMQ();
     this.registerTelegramCommands();
   }
 
-  private registerTelegramCommands() {
-    // Debug handler
-    this.telegramService.onText(/\/debug/, async (msg) => {
-      const chatId = msg.chat.id;
-      this.logger.debug(`Received /debug from chatId=${chatId}`);
-      await this.telegramService.sendMessage(
-        chatId,
-        `✅ Debug OK\nChat ID: \`${chatId}\``,
-        { parse_mode: 'Markdown' },
-      );
-    });
+  private async connectRabbitMQ() {
+    try {
+      const connection = await amqp.connect(process.env.RABBITMQ_URL);
+      this.channel = await connection.createChannel();
 
-    // Container list
-    this.telegramService.onText(/\/containers/, async (msg) => {
-      this.logger.debug(`Received /containers from chatId=${msg.chat.id}`);
-      if (!this.isAuthorized(msg.chat.id)) return;
-
-      try {
-        const containers = await this.docker.listContainers({ all: false });
-
-        if (containers.length === 0) {
-          await this.telegramService.sendMessage(
-            msg.chat.id,
-            '🚫 Tidak ada container yang berjalan.',
-          );
-          return;
-        }
-
-        const reply = containers
-          .map((c: any) => {
-            return (
-              `📦 *${c.Names[0]}*\n` +
-              `🖥️ Hostname: \`${os.hostname()}\`\n` +
-              `🌐 Server IP: \`${getServerIp()}\`\n` +
-              `🔑 ID: \`${c.Id.substring(0, 12)}\`\n` +
-              `📊 Status: ${c.Status}\n` +
-              `=====================`
-            );
-          })
-          .join('\n\n');
-
-        await this.telegramService.sendMessage(msg.chat.id, reply, {
-          parse_mode: 'Markdown',
-        });
-      } catch (error) {
-        this.logger.error('Gagal list container:', error);
-        await this.telegramService.sendMessage(
-          msg.chat.id,
-          `❌ Error: ${error.message}`,
-        );
-      }
-    });
-
-    // Restart container
-    this.telegramService.onText(/\/restart (.+)/, async (msg, match) => {
-      this.logger.debug(`Received /restart from chatId=${msg.chat.id}`);
-      if (!this.isAuthorized(msg.chat.id)) return;
-
-      const containerId = match?.[1];
-      if (!containerId) {
-        await this.telegramService.sendMessage(
-          msg.chat.id,
-          '⚠️ Gunakan format: /restart <containerId>',
-        );
-        return;
-      }
-
-      try {
-        const container = this.docker.getContainer(containerId);
-        await container.restart();
-        await this.telegramService.sendMessage(
-          msg.chat.id,
-          `✅ Container ${containerId} berhasil direstart.`,
-        );
-      } catch (error) {
-        this.logger.error('Gagal restart container:', error);
-        await this.telegramService.sendMessage(
-          msg.chat.id,
-          `❌ Error: ${error.message}`,
-        );
-      }
-    });
-
-    // Stop container
-    this.telegramService.onText(/\/stop (.+)/, async (msg, match) => {
-      const containerId = match?.[1];
-      if (!containerId) return;
-      try {
-        const containers = await this.docker.listContainers({ all: true });
-        const found = containers.find(c => c.Id.startsWith(containerId));
-        if (!found) {
-          await this.telegramService.sendMessage(msg.chat.id, '❌ Container tidak ditemukan.');
-          return;
-        }
-        const container = this.docker.getContainer(found.Id);
-        await container.stop();
-        await this.telegramService.sendMessage(msg.chat.id, `🛑 Container ${found.Names[0]} berhasil distop.`);
-      } catch (error: any) {
-        await this.telegramService.sendMessage(msg.chat.id, `❌ Error: ${error.message}`);
-      }
-    });
+      // Exchange khusus perintah telegram
+      await this.channel.assertExchange(`${process.env.DOCKER_COMMANDS}`, 'fanout', { durable: true });
+      this.logger.log('✅ Connected to RabbitMQ (commands exchange ready).');
+    } catch (error) {
+      this.logger.error('❌ RabbitMQ connection failed:', error);
+    }
   }
+
+  private publishCommand(command: string, payload: any) {
+    if (!this.channel) {
+      this.logger.error('RabbitMQ channel not available');
+      return;
+    }
+    const message = {
+      command,
+      payload,
+      serverIp: getServerIp(),
+      hostname: os.hostname(),
+      time: new Date().toISOString(),
+    };
+    this.channel.publish(
+      `${process.env.DOCKER_COMMANDS}`,
+      '',
+      Buffer.from(JSON.stringify(message)),
+    );
+    this.logger.log(`📤 Command published: ${command} ${JSON.stringify(payload)}`);
+  }
+
+private registerTelegramCommands() {
+  // Debug handler
+  this.telegramService.onText(/\/debug/, async (msg) => {
+    const chatId = msg.chat.id;
+    this.logger.debug(`Received /debug from chatId=${chatId}`);
+    if (!this.isAuthorized(chatId)) return;
+    this.logger.log(`Debug OK for chatId=${chatId}`);
+  });
+
+  // Container list
+  this.telegramService.onText(/\/containers/, async (msg) => {
+    this.logger.debug(`Received /containers from chatId=${msg.chat.id}`);
+    if (!this.isAuthorized(msg.chat.id)) return;
+
+    this.publishCommand('containers', { chatId: msg.chat.id });
+  });
+
+  // Restart container
+  this.telegramService.onText(/\/restart (.+)/, async (msg, match) => {
+    this.logger.debug(`Received /restart from chatId=${msg.chat.id}`);
+    if (!this.isAuthorized(msg.chat.id)) return;
+
+    const containerId = match?.[1];
+    if (!containerId) {
+      return;
+    }
+
+    this.publishCommand('restart', { containerId, chatId: msg.chat.id });
+    this.logger.log(`⏳ Restart command published for ${containerId}`);
+  });
+
+  // Stop container
+  this.telegramService.onText(/\/stop (.+)/, async (msg, match) => {
+    this.logger.debug(`Received /stop from chatId=${msg.chat.id}`);
+    if (!this.isAuthorized(msg.chat.id)) return;
+
+    const containerId = match?.[1];
+    if (!containerId) {
+      return;
+    }
+
+    this.publishCommand('stop', { containerId, chatId: msg.chat.id });
+    this.logger.log(`⏳ Stop command published for ${containerId}`);
+  });
+}
 
   private isAuthorized(chatId: number): boolean {
     if (this.allowedChatIds.length === 0) return true;
