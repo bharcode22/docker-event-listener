@@ -1,6 +1,7 @@
 import { Injectable, OnApplicationBootstrap, Logger } from '@nestjs/common';
 import { RabbitmqConnectionService } from './rabbitmq.connection';
 import { RabbitmqTelegramListener } from './telegram-listener/telegram.listener';
+import { AdminListenerDocker } from './admin-listener/admin.listener';
 
 @Injectable()
 export class RabbitmqListenerService implements OnApplicationBootstrap {
@@ -18,6 +19,10 @@ export class RabbitmqListenerService implements OnApplicationBootstrap {
       {
         exchange: process.env.DOCKER_COMMANDS,
         handler: new RabbitmqTelegramListener(),
+      },
+      {
+        exchange: process.env.DOCKER_COMMANDS,
+        handler: new AdminListenerDocker(),
       },
     ].filter((l) => l.exchange);
 
