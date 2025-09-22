@@ -21,7 +21,7 @@ export class RabbitmqListenerService implements OnApplicationBootstrap {
         handler: new RabbitmqTelegramListener(),
       },
       {
-        exchange: process.env.DOCKER_COMMANDS,
+        exchange: process.env.ADMIN_DOCKER_COMMANDS,
         handler: new AdminListenerDocker(),
       },
     ].filter((l) => l.exchange);
