@@ -1,17 +1,33 @@
 import { Logger } from '@nestjs/common';
 import Docker = require('dockerode');
 import * as os from 'os';
+const { execSync } = require('child_process');
 
 function getServerIp(): string {
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]!) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
+  try {
+    const ip = execSync('hostname -I | awk \'{print $2}\'').toString().trim();
+    
+    if (ip) {
+      return ip;
+    }
+    
+    throw new Error('Command returned empty');
+  } catch (error) {
+    const nets = os.networkInterfaces();
+
+    for (const name of Object.keys(nets)) {
+      const netInfos = nets[name];
+      if (!netInfos) continue;
+
+      for (const net of netInfos) {
+        if (net.family === "IPv4" && !net.internal) {
+          return net.address;
+        }
       }
     }
+    
+    return '127.0.0.1';
   }
-  return 'unknown';
 }
 
 export class AdminListenerDocker {
