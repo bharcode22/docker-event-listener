@@ -128,6 +128,21 @@ export class AdminListenerDocker {
           return { message: `🛑 Container ${payload.containerId} berhasil distop.` };
         }
 
+        case 'reloadapps': {
+          this.logger.log("reloadapps of" + payload.containerId)
+
+           // Fire-and-forget
+           this.logger.log("IP KAMU ADALAH: "+getServerIp())
+           if(payload.containerId === getServerIp()){
+            fetch("http://localhost:3000/mobile-api/pod/reloadApi").catch(err => {
+              this.logger.warn(`⚠️ Fire-and-forget request gagal: ${err.message}`);
+            });
+           }
+          
+
+          return { message: `🔄 Restarting apps for ${payload.containerId}` };
+        }
+
         default:
           this.logger.warn(`⚠️ Unknown command: ${command}`);
           return { message: `⚠️ Command tidak dikenali: ${command}` };
