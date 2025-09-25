@@ -144,14 +144,15 @@ export class AdminListenerDocker {
 
         case 'runScript': {
           try {
-            this.logger.log('▶️ Menjalankan auto-script.sh...');
-            const { stdout, stderr } = await execAsync('./auto-script.sh');
-
-            if (stderr) {
-              this.logger.warn(`⚠️ Script error: ${stderr}`);
+            if(payload.containerId === getServerIp()){
+              this.logger.log('▶️ Menjalankan auto-script.sh...');
+              const { stdout, stderr } = await execAsync('./auto-script.sh');
+  
+              if (stderr) {
+                this.logger.warn(`⚠️ Script error: ${stderr}`);
+              }
+              return { message: '✅ auto-script.sh berhasil dijalankan.', output: stdout.trim() };
             }
-
-            return { message: '✅ auto-script.sh berhasil dijalankan.', output: stdout.trim() };
           } catch (err) {
             return { message: `❌ Gagal menjalankan auto-script.sh: ${err.message}` };
           }
@@ -159,14 +160,16 @@ export class AdminListenerDocker {
 
         case 'killProcess': {
           try {
-            this.logger.log('💀 Menjalankan kill-process.sh...');
-            const { stdout, stderr } = await execAsync('./kill-process.sh');
-
-            if (stderr) {
-              this.logger.warn(`⚠️ Script error: ${stderr}`);
+            if(payload.containerId === getServerIp()){
+              this.logger.log('💀 Menjalankan kill-process.sh...');
+              const { stdout, stderr } = await execAsync('./kill-process.sh');
+  
+              if (stderr) {
+                this.logger.warn(`⚠️ Script error: ${stderr}`);
+              }
+  
+              return { message: '✅ kill-process.sh berhasil dijalankan.', output: stdout.trim() };
             }
-
-            return { message: '✅ kill-process.sh berhasil dijalankan.', output: stdout.trim() };
           } catch (err) {
             return { message: `❌ Gagal menjalankan kill-process.sh: ${err.message}` };
           }
