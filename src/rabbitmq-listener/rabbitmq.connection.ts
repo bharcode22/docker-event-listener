@@ -1,40 +1,69 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import * as amqp from 'amqplib';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
 @Injectable()
-export class RabbitmqConnectionService implements OnModuleInit {
+export class RabbitmqConnectionService implements OnModuleInit, OnModuleDestroy {
+    private readonly logger = new Logger(RabbitmqConnectionService.name);
     private connection: amqp.Connection;
     private channel: amqp.Channel;
+    private isConnecting = false;
+    private reconnectDelay = 5000;
 
     async onModuleInit() {
-        await this.connect();
+        await this.connectWithRetry();
     }
 
-    private async connect() {
-        try {
-            this.connection = await amqp.connect(process.env.RABBITMQ_URL as string);
-            this.channel = await this.connection.createChannel();
+    async onModuleDestroy() {
+        await this.close();
+    }
 
-            this.channel.on('error', (err: any) => {
-                console.error('❌ RabbitMQ channel error:', err.message);
-            });
+    private async connectWithRetry() {
+        if (this.isConnecting) return;
+        this.isConnecting = true;
 
-            this.connection.on('error', (err: any) => {
-                console.error('❌ RabbitMQ connection error:', err.message);
-            });
-        } catch (err) {
-            console.error('❌ RabbitMQ connection failed:', err);
-            throw err;
+        while (!this.connection) {
+            try {
+                this.logger.log('🔌 Connecting to RabbitMQ...');
+                this.connection = await amqp.connect(process.env.RABBITMQ_URL as string);
+                this.channel = await this.connection.createChannel();
+
+                this.channel.on('error', (err: any) => {
+                    console.error('❌ RabbitMQ channel error:', err.message);
+                });
+
+                this.connection.on('error', (err: any) => {
+                    console.error('❌ RabbitMQ connection error:', err.message);
+                });
+
+                this.connection.on('close', async () => {
+                    console.warn('⚠️ RabbitMQ connection closed. Reconnecting...');
+                    this.connection = null;
+                    this.channel = null;
+                    await this.delay(this.reconnectDelay);
+                    await this.connectWithRetry();
+                });
+
+                this.logger.log('✅ RabbitMQ connected');
+            } catch (err) {
+                console.error('❌ RabbitMQ connection failed, retrying in 5s:', err.message);
+                await this.delay(this.reconnectDelay);
+            }
         }
+
+        this.isConnecting = false;
+    }
+
+    private delay(ms: number) {
+        return new Promise((res) => setTimeout(res, ms));
     }
 
     async waitForChannel(retries = 5, delay = 1000): Promise<amqp.Channel> {
         for (let i = 0; i < retries; i++) {
-            if (this.channel) return this.channel;
+        if (this.channel) return this.channel;
             console.log(`⏳ Waiting for RabbitMQ channel... (${i + 1}/${retries})`);
-            await new Promise(res => setTimeout(res, delay));
+            await this.delay(delay);
         }
         throw new Error('❌ Channel not ready after retries');
     }
@@ -44,5 +73,14 @@ export class RabbitmqConnectionService implements OnModuleInit {
         await channel.assertExchange(exchange, type, { durable: true });
         console.log(`✅ Exchange [${exchange}] asserted (${type})`);
         return channel;
+    }
+
+    async close() {
+        try {
+            await this.channel?.close();
+            await this.connection?.close();
+        } catch (err) {
+            console.error('❌ Error closing RabbitMQ:', err.message);
+        }
     }
 }
