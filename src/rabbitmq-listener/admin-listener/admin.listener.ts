@@ -146,7 +146,7 @@ export class AdminListenerDocker {
           try {
             if(payload.containerId === getServerIp()){
               this.logger.log('▶️ Menjalankan auto-script.sh...');
-              const { stdout, stderr } = await execAsync('./auto-script.sh');
+              const { stdout, stderr } = await execAsync('~/auto-script.sh');
   
               if (stderr) {
                 this.logger.warn(`⚠️ Script error: ${stderr}`);
@@ -162,7 +162,7 @@ export class AdminListenerDocker {
           try {
             if(payload.containerId === getServerIp()){
               this.logger.log('💀 Menjalankan kill-process.sh...');
-              const { stdout, stderr } = await execAsync('./kill-process.sh');
+              const { stdout, stderr } = await execAsync('~/kill-process.sh');
   
               if (stderr) {
                 this.logger.warn(`⚠️ Script error: ${stderr}`);
