@@ -2,6 +2,9 @@ import { Logger } from '@nestjs/common';
 import Docker = require('dockerode');
 import * as os from 'os';
 const { execSync } = require('child_process');
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
 
 function getServerIp(): string {
   try {
@@ -130,21 +133,47 @@ export class AdminListenerDocker {
 
         case 'reloadapps': {
           this.logger.log("reloadapps of" + payload.containerId)
-
-           // Fire-and-forget
-           this.logger.log("IP KAMU ADALAH: "+getServerIp())
-           if(payload.containerId === getServerIp()){
-            fetch("http://localhost:3000/mobile-api/pod/reloadApi").catch(err => {
-              this.logger.warn(`⚠️ Fire-and-forget request gagal: ${err.message}`);
-            });
-           }
-          
-
+            this.logger.log("IP KAMU ADALAH: "+getServerIp())
+            if(payload.containerId === getServerIp()){
+              fetch("http://localhost:3000/mobile-api/pod/reloadApi").catch(err => {
+                this.logger.warn(`⚠️ Fire-and-forget request gagal: ${err.message}`);
+              });
+            }
           return { message: `🔄 Restarting apps for ${payload.containerId}` };
         }
 
+        case 'runScript': {
+          try {
+            this.logger.log('▶️ Menjalankan auto-script.sh...');
+            const { stdout, stderr } = await execAsync('./auto-script.sh');
+
+            if (stderr) {
+              this.logger.warn(`⚠️ Script error: ${stderr}`);
+            }
+
+            return { message: '✅ auto-script.sh berhasil dijalankan.', output: stdout.trim() };
+          } catch (err) {
+            return { message: `❌ Gagal menjalankan auto-script.sh: ${err.message}` };
+          }
+        }
+
+        case 'killProcess': {
+          try {
+            this.logger.log('💀 Menjalankan kill-process.sh...');
+            const { stdout, stderr } = await execAsync('./kill-process.sh');
+
+            if (stderr) {
+              this.logger.warn(`⚠️ Script error: ${stderr}`);
+            }
+
+            return { message: '✅ kill-process.sh berhasil dijalankan.', output: stdout.trim() };
+          } catch (err) {
+            return { message: `❌ Gagal menjalankan kill-process.sh: ${err.message}` };
+          }
+        }
+
         default:
-          this.logger.warn(`⚠️ Unknown command: ${command}`);
+          this.logger.warn(`⚠️ Anomali Tung Tung Tung Tung sahur: ${command}`);
           return { message: `⚠️ Command tidak dikenali: ${command}` };
       }
     } catch (error) {
