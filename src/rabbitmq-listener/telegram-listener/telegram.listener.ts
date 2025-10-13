@@ -128,7 +128,7 @@ export class RabbitmqTelegramListener {
         case 'runScript': {
           try {
             this.logger.log('▶️ Menjalankan auto-script.sh...');
-            const { stdout, stderr } = await execAsync('./auto-script.sh');
+            const { stdout, stderr } = await execAsync('../../scripts/exec/auto-script.sh');
 
             if (stderr) {
               this.logger.warn(`⚠️ Script error: ${stderr}`);
@@ -143,7 +143,7 @@ export class RabbitmqTelegramListener {
         case 'killProcess': {
           try {
             this.logger.log('💀 Menjalankan kill-process.sh...');
-            const { stdout, stderr } = await execAsync('./kill-process.sh');
+            const { stdout, stderr } = await execAsync('../../scripts/exec/kill-process.sh');
 
             if (stderr) {
               this.logger.warn(`⚠️ Script error: ${stderr}`);
