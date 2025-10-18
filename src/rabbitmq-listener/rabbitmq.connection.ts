@@ -27,7 +27,13 @@ export class RabbitmqConnectionService implements OnModuleInit, OnModuleDestroy 
             try {
                 this.logger.log('🔌 Connecting to RabbitMQ...');
                 this.connection = await amqp.connect(process.env.RABBITMQ_URL as string);
-                this.channel = await this.connection.createChannel();
+                this.channel = await this.connection.createChannel({
+                    // Set consumer_timeout to 30 minutes (1800000ms) or your preferred value
+                    // Set to false to disable timeout (not recommended for production)
+                    // consumer_timeout: 1800000
+                    // Atau nonaktifkan dengan false
+                    consumer_timeout: false
+                });
 
                 this.channel.on('error', (err: any) => {
                     console.error('❌ RabbitMQ channel error:', err.message);
